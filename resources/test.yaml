@@ -1,0 +1,19 @@
+database:
+  host: localhost
+  port: 5432
+  user: user
+  password: pass
+  name: db
+server:
+  host: 127.0.0.1
+  port: 8081
+  readinessPath: /ready
+  livenessPath: /health
+resources:
+  memory: 256Mi
+  cpu: 250m
+  storage: 500Mi
+  threads: 5
+logging:
+  level: debug
+  format: json

@@ -1,0 +1,31 @@
+# Binaries
+*.exe
+*.test.exe
+go_build_*
+
+# Test files
+*_test.go
+
+# Coverage files
+*.out
+cov
+cov.out
+coverage
+coverage.out
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+*.iml
+.vscode
+
+# Documentation
+*.md
+README.md
+
+# Mock files
+mock_*.go
+

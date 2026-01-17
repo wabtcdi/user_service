@@ -1,0 +1,20 @@
+database:
+  host: ${DB_HOST} # Minikube: 192.168.59.101 (NodePort) or postgres-service (in-cluster)
+  port: ${DB_PORT} # Minikube: 30432 (NodePort) or 5432 (in-cluster)
+  user: ${DB_USER} # postgres
+  password: ${DB_PASSWORD} # postgres123
+  name: ${DB_NAME} # user_service
+server:
+  host: ${SERVER_HOST}
+  port: ${SERVER_PORT}
+  readinessPath: ${READINESS_PATH}
+  livenessPath: ${LIVENESS_PATH}
+resources:
+  memory: ${MEMORY}
+  cpu: ${CPU}
+  storage: ${STORAGE}
+  threads: ${THREADS}
+logging:
+  level: ${LOG_LEVEL}
+  format: ${LOG_FORMAT}
+

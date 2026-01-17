@@ -1,0 +1,19 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  readinessPath: /ready
+  livenessPath: /health
+resources:
+  memory: 512Mi
+  cpu: 500m
+  storage: 1Gi
+  threads: 10
+logging:
+  level: info
+  format: json
+database:
+  host: 192.168.59.102
+  port: 30432
+  user: postgres
+  password: postgres123
+  name: userdb
