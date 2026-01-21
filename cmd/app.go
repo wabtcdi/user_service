@@ -2,24 +2,27 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/wabtcdi/user_service/cmd/health"
 	"github.com/wabtcdi/user_service/cmd/log"
+	"github.com/wabtcdi/user_service/handlers"
+	"github.com/wabtcdi/user_service/repository"
+	"github.com/wabtcdi/user_service/service"
 
 	"github.com/gorilla/mux"
 	"github.com/pressly/goose/v3"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 type Pinger interface {
 	Ping() error
 }
 
-type DBOpener func(driverName, dataSourceName string) (*sql.DB, error)
+type DBOpener func(dsn string) (*gorm.DB, error)
 
 type ServerStarter interface {
 	Start(addr string, handler http.Handler) error
@@ -85,23 +88,48 @@ func loadConfiguration(path string) (Config, error) {
 	return cfg, nil
 }
 
-func connectDatabase(cfg Config, opener DBOpener) (*sql.DB, error) {
+func connectDatabase(cfg Config, opener DBOpener) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		cfg.Database.Host, cfg.Database.Port, cfg.Database.User, cfg.Database.Password, cfg.Database.Name)
-	db, err := opener("postgres", dsn)
+	db, err := opener(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// Get underlying sql.DB for connection pooling and Goose migrations
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+
+	// Configure connection pool
+	maxOpenConns := 25
+	maxIdleConns := 5
+	connMaxLifetime := 5 * time.Minute
+
+	if cfg.Resources.Threads > 0 {
+		maxOpenConns = cfg.Resources.Threads * 2
+		maxIdleConns = cfg.Resources.Threads / 2
+		if maxIdleConns < 2 {
+			maxIdleConns = 2
+		}
+	}
+
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
+	logrus.Infof("Connection pool configured: max_open=%d, max_idle=%d, max_lifetime=%v",
+		maxOpenConns, maxIdleConns, connMaxLifetime)
 
 	if err := goose.SetDialect("postgres"); err != nil {
 		return nil, fmt.Errorf("failed to set goose dialect: %w", err)
 	}
 
-	if err := goose.Up(db, "../database/migrations"); err != nil {
+	if err := goose.Up(sqlDB, "../database/migrations"); err != nil {
 		return nil, fmt.Errorf("failed to run goose migrations: %w", err)
 	}
 
-	err = db.Ping()
+	err = sqlDB.Ping()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -110,20 +138,49 @@ func connectDatabase(cfg Config, opener DBOpener) (*sql.DB, error) {
 	return db, nil
 }
 
-func startServer(cfg Config, db *sql.DB, starter ServerStarter) error {
+func startServer(cfg Config, db *gorm.DB, starter ServerStarter) error {
 	r := createRouter(cfg, db)
 	addr := getAddr(cfg)
 	logrus.Infof("Starting server on %s", addr)
 	return starter.Start(addr, r)
 }
 
-func createRouter(cfg Config, db *sql.DB) *mux.Router {
+func createRouter(cfg Config, db *gorm.DB) *mux.Router {
 	r := mux.NewRouter()
 
+	// Health checks
 	checker := &health.Checker{DB: db}
-
 	r.HandleFunc(cfg.Server.LivenessPath, livenessHandler).Methods("GET")
 	r.HandleFunc(cfg.Server.ReadinessPath, checker.Check).Methods("GET")
+
+	// Initialize repositories
+	userRepo := repository.NewPostgresUserRepository(db)
+	accessLevelRepo := repository.NewPostgresAccessLevelRepository(db)
+
+	// Initialize services
+	userService := service.NewUserService(userRepo, accessLevelRepo)
+	accessLevelService := service.NewAccessLevelService(accessLevelRepo)
+
+	// Initialize handlers
+	userHandler := handlers.NewUserHandler(userService)
+	accessLevelHandler := handlers.NewAccessLevelHandler(accessLevelService)
+
+	// User routes
+	r.HandleFunc("/users", userHandler.CreateUser).Methods("POST")
+	r.HandleFunc("/users", userHandler.ListUsers).Methods("GET")
+	r.HandleFunc("/users/{id}", userHandler.GetUser).Methods("GET")
+	r.HandleFunc("/users/{id}", userHandler.UpdateUser).Methods("PUT")
+	r.HandleFunc("/users/{id}", userHandler.DeleteUser).Methods("DELETE")
+	r.HandleFunc("/users/{id}/access-levels", userHandler.AssignAccessLevels).Methods("POST")
+	r.HandleFunc("/users/{id}/access-levels", userHandler.GetUserAccessLevels).Methods("GET")
+
+	// Authentication routes
+	r.HandleFunc("/auth/login", userHandler.Login).Methods("POST")
+
+	// Access level routes
+	r.HandleFunc("/access-levels", accessLevelHandler.CreateAccessLevel).Methods("POST")
+	r.HandleFunc("/access-levels", accessLevelHandler.ListAccessLevels).Methods("GET")
+	r.HandleFunc("/access-levels/{id}", accessLevelHandler.GetAccessLevel).Methods("GET")
 
 	return r
 }
