@@ -12,10 +12,10 @@ import (
 )
 
 type AccessLevelHandler struct {
-	service *service.AccessLevelService
+	service service.AccessLevelServiceInterface
 }
 
-func NewAccessLevelHandler(service *service.AccessLevelService) *AccessLevelHandler {
+func NewAccessLevelHandler(service service.AccessLevelServiceInterface) *AccessLevelHandler {
 	return &AccessLevelHandler{service: service}
 }
 
