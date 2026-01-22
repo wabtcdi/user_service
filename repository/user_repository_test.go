@@ -2,18 +2,21 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/wabtcdi/user_service/models"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 // setupTestDB creates an in-memory SQLite database for testing
+// Note: Run tests with CGO_ENABLED=0 to use the pure Go SQLite driver (modernc.org/sqlite)
+// Example: CGO_ENABLED=0 go test -v ./repository
 func setupTestDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	// Use the pure Go SQLite driver via the helper
+	db, err := OpenTestDB()
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
@@ -248,7 +251,7 @@ func TestUserRepository_List(t *testing.T) {
 		user := &models.User{
 			FirstName: "User",
 			LastName:  "Test",
-			Email:     "user" + string(rune('0'+i)) + "@example.com",
+			Email:     fmt.Sprintf("user%d@example.com", i),
 		}
 		auth := &models.UserAuthentication{
 			PasswordHash: "hashedpassword",
